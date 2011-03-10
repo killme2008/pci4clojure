@@ -58,8 +58,53 @@
 (println (sim-pearson critics "Lisa Rose" "Gene Seymour"))  
 
 (defn top-matchers
-  [prefs person n sim]
-  (let 
-    [scores (apply hash-map (flatten (for [other (keys prefs) :while (not (= other person))] (list (sim prefs person other) other))))]
-   (take n (reverse (sort scores)))))
-(println (top-matchers critics "Toby" 3 sim-pearson))
+  ([prefs person]
+    (top-matchers prefs person 5))
+  ([prefs person n]
+   (top-matchers prefs person n sim-pearson))
+  ([prefs person n sim]
+   (let 
+     [scores (apply hash-map (flatten (for [other (keys prefs) :when (not (= other person))] (list (sim prefs person other) other))))]
+     (take n (reverse (sort scores))))))
+(println (top-matchers critics "Toby" 3))
+
+
+
+(def myadd (fnil + 0))
+(defn get-recommendations
+  ([prefs person]
+    (get-recommendations prefs person sim-pearson))
+  ([prefs person similarity]
+    (let [person-prefs (get prefs person)
+          others (filter #(> (similarity prefs person %) 0) (filter #(not (= % person)) (keys prefs)))
+          simsum (transient (hash-map))
+          total (transient (hash-map))]
+          (doall (map (fn [other] 
+                (let [sim (similarity prefs person other)
+                      other-prefs (get prefs other)]
+                 (doall
+                   (map (fn [item]
+                    (let [score (get person-prefs item)]
+                       (if (or (not score) (= score 0))
+                          (do (assoc! total item (myadd (get total item) (* sim (get other-prefs item))))
+                              (assoc! simsum item (myadd (get simsum item) sim)))))) (keys (get prefs other)))))) others))
+          (let [psimsum (persistent! simsum)
+                ptotal (persistent! total)]
+               (reverse (sort (apply hash-map (flatten (for [item (keys ptotal)] (list (/ (get ptotal item) (get psimsum item)) item))))))         
+            ))))
+;;(println (get-recommendations critics "Toby"))
+(println (get-recommendations critics "Toby" sim-distance))
+(defn transform
+  [prefs]
+ (let [new-map (transient (hash-map))]
+   (doseq [person (keys prefs)]
+     (doseq [[item score] (get prefs person)]
+       (let [sub-map (get new-map item)]
+         (if sub-map
+           (assoc! new-map item (assoc sub-map person score))
+           (assoc! new-map item  (assoc (hash-map) person score))))))
+  (persistent! new-map)))
+  
+        
+(println (transform critics))
+(println (top-matchers (transform critics) "Superman Returns" 10))
